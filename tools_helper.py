@@ -9,7 +9,12 @@ class LinuxToolsHelper(object):
     class PCIePathHelper(object):
 
         def __init__(self, path_str, from_name=False):
-            self._path_str = path_str
+            if len(path_str.strip()) == 0:
+                raise ValueError("empty udev path!")
+            self._path_str  = path_str
+            path_split = path_str.split('/')
+            if len(path_split) <= 2:
+                raise IndexError("invalid udev path: {}".format(path_str))
             # pcie_path is an array of PCIe BDF's in the PCIe hierarchy,
             # left most is parent, right most is target device.
             if from_name:
@@ -45,9 +50,7 @@ class LinuxToolsHelper(object):
 
         # return the BDF of the upstream PCIe device (typically for reset purposes)
         def upstream(self):
-            if len(self._pcie_path) >= 2:
-                return self._pcie_path[-2]
-            return None
+            return self._pcie_path[-2]
 
         # return the BDF of the rootport PCIe device (top of the hierarchy)
         def root(self):
