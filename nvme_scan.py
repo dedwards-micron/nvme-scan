@@ -1,5 +1,7 @@
 import argparse
 import os
+from datetime import datetime
+from tools_helper import LinuxToolsHelper
 
 
 class NvmeScanOptions(object):
@@ -72,9 +74,35 @@ def get_args(args_test=None):
     return ret_args
 
 
+class NvmeDeviceCollector(object):
+
+    def __init__(self):
+        # TODO: implement option to connect to remote server over ssh
+        self.tools_hlpr = LinuxToolsHelper()
+
+    def diff_scan(self, prev_scan):
+        raise NotImplemented("ERROR: not implemented yet!")
+
+    # Returns a dictionary object containing structured device information.
+    # Elements of each dictionary item are similar and designed to allow lookup
+    # of different things based on what you want.
+    #
+    def new_scan(self):
+        timestamp = datetime.now().isoformat()
+        # scan host for devices as they exist upon instantiation
+        #   o bdf_list   tells you what has enumerated on the pcie bus
+        #   o node_list  tells you which pcie devices have initialized successfully
+        #   o block_list tells you which namespaces are attached (not much else)
+        self.bdf_list   = self.tools_hlpr.lspci_get_bdf_list()
+        self.node_list  = self.tools_hlpr.find_nvme_dev_nodes()
+        self.block_list = self.tools_hlpr.find_nvme_namespace_dev_nodes()
+        # now build a database of devices to search for information on
+        #
+
+
 # main execution routine IF this is run as a script
 if __name__ == '__main__':
-    cli_args = get_args()
+    cli_args   = get_args()
     if cli_args.diff_scan:
         # perform a DIFF scan from the input file; which means we don't scan
         # the current visible device list, we use the input file as a basis

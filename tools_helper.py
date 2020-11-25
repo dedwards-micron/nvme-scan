@@ -1,6 +1,6 @@
 import subprocess
+import json
 from paramiko import SSHClient, AutoAddPolicy
-
 
 class LinuxToolsHelper(object):
 
@@ -127,9 +127,9 @@ class LinuxToolsHelper(object):
             stdout, stderr = cmd_exec.communicate()
             ret_code = cmd_exec.poll()
             if ret_code != 0:
-                self.log('ERROR', "failure executing {}, returned:\n{}".format(" ".join(cmd_list), stderr))
+                self.log('ERROR', "failure executing '{}', returned:\n{}".format(" ".join(cmd_list), stderr))
         except Exception as exc:
-            self.log('ERROR', "(EXCEPTION) failure executing {}, returned:\n{}".format(" ".join(cmd_list), exc))
+            self.log('ERROR', "(EXCEPTION) failure executing '{}', returned:\n{}".format(" ".join(cmd_list), exc))
             ret_code = 2
             stdout = "{}".format(exc)
         return ret_code, stdout
@@ -229,6 +229,68 @@ class LinuxToolsHelper(object):
                 pci_id = tokens[0].strip()
                 title  = bdf_str[len(pci_id)+1:]
                 ret_dict.update({ pci_id: title })
-            return ret_dict
+            if len(ret_dict) > 0:
+                return ret_dict
         return None
 
+    def nvme_get_ns_identify(self, dev_node, ns_id):
+        nvme_cmd = [ 'sudo', 'nvme', 'id-ns', dev_node, '-o', 'json', '-n', str(ns_id) ]
+        ret_code, ns_data = self.exec(nvme_cmd)
+        if ret_code == 0:
+            return json.loads(ns_data)
+        return {}
+
+    def nvme_get_ns_list(self, dev_node):
+        # get list of namespace ids, -a option doesn't seem to work on some drives
+        # and there is no json out.
+        nvme_cmd = [ 'sudo', 'nvme', 'list-ns', dev_node ]
+        ret_code, nvme_out = self.exec(nvme_cmd)
+        ret_list = []
+        if ret_code == 0:
+            for line_item in nvme_out.split('\n'):
+                if len(line_item.strip()) == 0:
+                    continue
+                tokens  = line_item.strip().split(':')
+                index   = int(tokens[0].strip('[]'))
+                ns_id   = int(tokens[1].strip(), 16)
+                ns_data = self.nvme_get_ns_identify(dev_node, ns_id)
+                ret_list.append({ 'ns_id': ns_id, 'index': index, 'identify': ns_data })
+            if len(ret_list) > 0:
+                return ret_list
+        return None
+
+    def nvme_get_ctrl_identify(self, dev_node):
+        nvme_cmd = [ 'sudo', 'nvme', 'id-ctrl', dev_node, '-o', 'json' ]
+        ret_code, ctrl_data = self.exec(nvme_cmd)
+        if ret_code == 0:
+            return json.loads(ctrl_data)
+        return {}
+
+    def nvme_get_ctrl_identify_by_id(self, dev_node, ctrl_id):
+        nvme_cmd = [ 'sudo', 'nvme', 'id-ctrl', dev_node, '-o', 'json', '-c', str(ctrl_id) ]
+        ret_code, ctrl_data = self.exec(nvme_cmd)
+        if ret_code == 0:
+            return json.loads(ctrl_data)
+        else:
+            print("NOTE: some devices dont support identify controller by controller id")
+        return None
+
+    def nvme_get_ctrl_id_list(self, dev_node):
+        # get list of controller ids, this does NOT work on all NVMe drives.
+        nvme_cmd = [ 'sudo', 'nvme', 'list-ctrl', dev_node ]
+        ret_code, nvme_out = self.exec(nvme_cmd)
+        ret_list = []
+        if ret_code == 0:
+            for line_item in nvme_out.split('\n'):
+                if len(line_item.strip()) == 0:
+                    continue
+                tokens  = line_item.strip().split(':')
+                index   = int(tokens[0].strip('[]'))
+                ctrl_id   = int(tokens[1].strip(), 16)
+                ctrl_data = self.nvme_get_ctrl_identify_by_id(dev_node, ctrl_id)
+                ret_list.append({ 'ctrl_id': ctrl_id, 'index': index, 'identify': ctrl_data })
+            if len(ret_list) > 0:
+                return ret_list
+        else:
+            print("NOTE: some devices dont support the list-ctrl command!")
+        return None

@@ -201,7 +201,49 @@ class ToolsHelperTestCase(unittest.TestCase):
         self.assertIsNone(local_tools.udevadm_get_path_by_bdf('i:cant:drive.55'))
         self.assertIsNone(local_tools.udevadm_get_path_by_name('/dev/nosuchdev'))
         empty_dict = local_tools.lspci_get_bdf_list(filter="no-such-dev_filter")
-        self.assertTrue(len(empty_dict) == 0)
+        self.assertIsNone(empty_dict)
+
+    def test_11_nvme_get_ns_list(self):
+        local_tools = LinuxToolsHelper()
+        dev_nodes   = local_tools.find_nvme_dev_nodes()
+        for dev_node in dev_nodes:
+            ns_list = local_tools.nvme_get_ns_list(dev_node)
+            self.assertTrue(len(ns_list) > 0)
+            print(" -> NS List:\n{}".format(ns_list))
+
+    def _get_ctrl_identify(self, tools_hlpr, dev_node):
+        id_ctrl = tools_hlpr.nvme_get_ctrl_identify(dev_node)
+        self.assertIsNotNone(id_ctrl)
+        self.assertIsNotNone(id_ctrl.get('cntlid', None))
+        self.assertIsNotNone(id_ctrl.get('sn', None))
+        self.assertIsNotNone(id_ctrl.get('mn', None))
+        print(" -> dev node: {}, ctrl_id: {}, sn: {}, model: {}".format(dev_node,
+                                                                        id_ctrl['cntlid'],
+                                                                        id_ctrl['sn'].strip(),
+                                                                        id_ctrl['mn'].strip()))
+        return id_ctrl
+
+    def test_12_nvme_get_ctrl_identify(self):
+        local_tools = LinuxToolsHelper()
+        dev_nodes   = local_tools.find_nvme_dev_nodes()
+        self.assertIsNotNone(dev_nodes)
+        self._get_ctrl_identify(local_tools, dev_nodes[0])
+
+    def test_13_nvme_get_ctrl_identify_by_id(self):
+        local_tools = LinuxToolsHelper()
+        dev_nodes   = local_tools.find_nvme_dev_nodes()
+        self.assertIsNotNone(dev_nodes)
+        dev_node    = dev_nodes[0]
+        print("test_13_nvme_get_ctrl_identify_by_id: chose dev node={}".format(dev_node))
+        id_ctrl     = self._get_ctrl_identify(local_tools, dev_node)
+        ctrl_id     = id_ctrl['cntlid']
+        alt_id_ctrl = local_tools.nvme_get_ctrl_identify_by_id(dev_node, ctrl_id)
+        if not (alt_id_ctrl is None):
+            # results from this query should be identical in both methods
+            self.assertEqual(alt_id_ctrl.get('cntlid', None), id_ctrl['cntlid'])
+            self.assertEqual(alt_id_ctrl.get('sn', None),     id_ctrl['sn'])
+            self.assertEqual(alt_id_ctrl.get('mn', None),     id_ctrl['mn'])
+            print(" -> id_ctrl (by id) confirmed for: {}".format(dev_node))
 
 
 if __name__ == '__main__':
