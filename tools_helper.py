@@ -2,25 +2,34 @@ import subprocess
 import json
 from paramiko import SSHClient, AutoAddPolicy
 
+
 class LinuxToolsHelper(object):
 
     # this class is returned by any helper routine that gathers pcie path
     # data; typically from udevadm, but NOT lspci.
     class PCIePathHelper(object):
 
-        def __init__(self, path_str, from_name=False):
+        def __init__(self, path_str, by_name=None):
             if len(path_str.strip()) == 0:
                 raise ValueError("empty udev path!")
             self._path_str  = path_str
-            path_split = path_str.split('/')
+            path_split      = path_str.split('/')
             if len(path_split) <= 2:
                 raise IndexError("invalid udev path: {}".format(path_str))
             # pcie_path is an array of PCIe BDF's in the PCIe hierarchy,
             # left most is parent, right most is target device.
-            if from_name:
-                self._pcie_path = path_str.split('/')[2:-2]
-            else:
+            if by_name is None:
                 self._pcie_path = path_str.split('/')[2:]
+            else:
+                temp_path = path_str.split('/')
+                # find index of the driver name
+                index = 0
+                for path_item in temp_path:
+                    if path_item == by_name:
+                        break
+                    index += 1
+                temp_path = path_str.split('/')[2:index]
+                self._pcie_path = temp_path
 
         def __repr__(self):
             return "{}".format(self._pcie_path)
@@ -181,11 +190,12 @@ class LinuxToolsHelper(object):
     # and break out the PCIe components into an array for parent / root
     # relationships.
     #
-    def udevadm_get_path_by_name(self, dev_node):
+    def udevadm_get_path_by_name(self, dev_node, **kwargs):
         udev_cmd = [ 'udevadm', 'info', '-q', 'path', '-n', "{}".format(dev_node) ]
         ret_code, path_str = self.exec(udev_cmd)
         if ret_code == 0:
-            path_hlpr = self.PCIePathHelper(path_str.strip(), from_name=True)
+            driver_name = kwargs.get('by_name', 'nvme')
+            path_hlpr   = self.PCIePathHelper(path_str.strip(), by_name=driver_name)
             return path_hlpr
         return None
 
@@ -201,7 +211,7 @@ class LinuxToolsHelper(object):
         udev_cmd = [ 'udevadm', 'info', '-q', 'path', '-p', "/sys/bus/pci/devices/{}".format(bdf) ]
         ret_code, path_str = self.exec(udev_cmd)
         if ret_code == 0:
-            path_hlpr = self.PCIePathHelper(path_str.strip(), from_name=False)
+            path_hlpr = self.PCIePathHelper(path_str.strip())
             return path_hlpr
         return None
 
@@ -233,7 +243,14 @@ class LinuxToolsHelper(object):
                 return ret_dict
         return None
 
-    def nvme_get_ns_identify(self, dev_node, ns_id):
+    def nvme_get_ns_identify(self, block_node):
+        nvme_cmd = [ 'sudo', 'nvme', 'id-ns', block_node, '-o', 'json' ]
+        ret_code, ns_data = self.exec(nvme_cmd)
+        if ret_code == 0:
+            return json.loads(ns_data)
+        return {}
+
+    def nvme_get_ns_identify_by_id(self, dev_node, ns_id):
         nvme_cmd = [ 'sudo', 'nvme', 'id-ns', dev_node, '-o', 'json', '-n', str(ns_id) ]
         ret_code, ns_data = self.exec(nvme_cmd)
         if ret_code == 0:
@@ -253,8 +270,8 @@ class LinuxToolsHelper(object):
                 tokens  = line_item.strip().split(':')
                 index   = int(tokens[0].strip('[]'))
                 ns_id   = int(tokens[1].strip(), 16)
-                ns_data = self.nvme_get_ns_identify(dev_node, ns_id)
-                ret_list.append({ 'ns_id': ns_id, 'index': index, 'identify': ns_data })
+                ns_data = self.nvme_get_ns_identify_by_id(dev_node, ns_id)
+                ret_list.append({ 'ns_id': ns_id, 'ns_index': index, 'id_ns': ns_data })
             if len(ret_list) > 0:
                 return ret_list
         return None
@@ -275,7 +292,7 @@ class LinuxToolsHelper(object):
             print("NOTE: some devices dont support identify controller by controller id")
         return None
 
-    def nvme_get_ctrl_id_list(self, dev_node):
+    def nvme_get_controller_list(self, dev_node):
         # get list of controller ids, this does NOT work on all NVMe drives.
         nvme_cmd = [ 'sudo', 'nvme', 'list-ctrl', dev_node ]
         ret_code, nvme_out = self.exec(nvme_cmd)
@@ -288,7 +305,7 @@ class LinuxToolsHelper(object):
                 index   = int(tokens[0].strip('[]'))
                 ctrl_id   = int(tokens[1].strip(), 16)
                 ctrl_data = self.nvme_get_ctrl_identify_by_id(dev_node, ctrl_id)
-                ret_list.append({ 'ctrl_id': ctrl_id, 'index': index, 'identify': ctrl_data })
+                ret_list.append({ 'ctrl_id': ctrl_id, 'ctrl_index': index, 'id_ctrl': ctrl_data })
             if len(ret_list) > 0:
                 return ret_list
         else:

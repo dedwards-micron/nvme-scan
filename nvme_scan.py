@@ -1,5 +1,6 @@
 import argparse
 import os
+import json
 from datetime import datetime
 from tools_helper import LinuxToolsHelper
 
@@ -76,9 +77,13 @@ def get_args(args_test=None):
 
 class NvmeDeviceCollector(object):
 
-    def __init__(self):
+    # (optional) argument full_scan:<dict> data from a previous scan
+    #            can be loaded in to perform diff any time.
+    #
+    def __init__(self, **kwargs):
         # TODO: implement option to connect to remote server over ssh
         self.tools_hlpr = LinuxToolsHelper()
+        self.full_scan  = kwargs.get('full_scan', {})
 
     def diff_scan(self, prev_scan):
         raise NotImplemented("ERROR: not implemented yet!")
@@ -90,14 +95,92 @@ class NvmeDeviceCollector(object):
     def new_scan(self):
         timestamp = datetime.now().isoformat()
         # scan host for devices as they exist upon instantiation
-        #   o bdf_list   tells you what has enumerated on the pcie bus
         #   o node_list  tells you which pcie devices have initialized successfully
         #   o block_list tells you which namespaces are attached (not much else)
-        self.bdf_list   = self.tools_hlpr.lspci_get_bdf_list()
-        self.node_list  = self.tools_hlpr.find_nvme_dev_nodes()
-        self.block_list = self.tools_hlpr.find_nvme_namespace_dev_nodes()
-        # now build a database of devices to search for information on
-        #
+        node_list  = self.tools_hlpr.find_nvme_dev_nodes()
+        temp_list  = self.tools_hlpr.find_nvme_namespace_dev_nodes()
+        # NOTE: kernel 5.something changed some things about namespaces, there is a
+        #       new set of block devices with 'p#' appended /dev/nvme0n1p1, I don't
+        #       want these because they all map back to the same BDF but do NOT map
+        #       to the drive query for namespaces.
+        block_list = []
+        for temp_block_dev in temp_list:
+            tokens = temp_block_dev.strip().split('p')
+            if len(tokens) == 1:
+                # only keep block nodes without 'p' identifiers
+                block_list.append(temp_block_dev)
+        # TODO: add parsing of udev "driver" path for block devices to associate namespaces to char devices
+        # Build SSD namespace list database
+        namespace_list  = []
+        ns_bdf_lookup   = {}
+        block_lookup    = {}
+        for block_node in block_list:
+            pcie_path = self.tools_hlpr.udevadm_get_path_by_name(block_node)
+            bdf       = pcie_path.bdf()
+            ns_data   = {
+                'type':       'id_namespace',
+                'bdf':        bdf,
+                'block_node': block_node,
+                'udev_path':  pcie_path.udev_path(),
+                # these ones must be active because they are visible to the os
+                'attach':     True,
+                # place holders for controller query (later)
+                'nsid':       None,
+                'id_ns':      None
+            }
+            namespace_list.append(ns_data)
+            ns_bdf_lookup.update({ bdf: ns_data })
+            block_lookup.update({ block_node: ns_data})
+
+        # Build SSD device list database
+        controller_list = []
+        bdf_lookup      = {}
+        node_lookup     = {}
+        ns_lookup       = {}
+        for dev_node in node_list:
+            # match controller to namespaces and determine attach state
+            ns_list   = self.tools_hlpr.nvme_get_ns_list(dev_node)
+            pcie_path = self.tools_hlpr.udevadm_get_path_by_name(dev_node)
+            bdf       = pcie_path.bdf()
+            id_ctrlr  = self.tools_hlpr.nvme_get_ctrl_identify(dev_node)
+            dev_data  = {
+                'type':      'id_controller',
+                'bdf':       bdf,
+                'upstream':  pcie_path.upstream(),
+                'dev_node':  dev_node,
+                'cntlid':    id_ctrlr['cntlid'],
+                'udev_path': pcie_path.udev_path(),
+                'id_ctrl':   id_ctrlr,
+                'list_ns':   ns_list
+            }
+            controller_list.append(dev_data)
+            bdf_lookup.update({ bdf: dev_data })
+            node_lookup.update({ dev_node: dev_data })
+            # match block devices to reported namespaces
+            for ns_data in namespace_list:
+                if ns_data['bdf'] == bdf:
+                    # block node will be unique so use dict for quick lookup
+                    ns_lookup.update({ns_data['block_node']: dev_data})
+        # save off full scan data for diff
+        self.full_scan = {
+            'ctrl_list':   controller_list,
+            'lu_bdf':      bdf_lookup,
+            'lu_dev_node': node_lookup,
+            'lu_ns':       ns_lookup
+        }
+        return self.full_scan
+
+    # determine supported features; of interest are:
+    #  o dual port controllers, virtualization mgmt (VFs)
+    #  o nvm sets, and endurance sets; from this build
+    #    supported features.
+    def parse_features(self, full_scan):
+        # TODO: implement data parsing of identify controller data.
+        feature_obj = {}
+        return feature_obj
+
+    def __str__(self):
+        return json.dumps(self.full_scan)
 
 
 # main execution routine IF this is run as a script

@@ -190,7 +190,7 @@ class ToolsHelperTestCase(unittest.TestCase):
         self.assertEqual(from_bdf_path.upstream(), 'pcieRootComplex')
         # make this one have an upstream, non-root complex parent
         name_path_str = "/devices/pcieRootComplex/upstreamBDF/myNvmeDevice/nvme/nvmeXYZ"
-        from_name_path = LinuxToolsHelper.PCIePathHelper(name_path_str, from_name=True)
+        from_name_path = LinuxToolsHelper.PCIePathHelper(name_path_str, by_name='nvme')
         self.assertEqual(from_name_path.bdf(), 'myNvmeDevice')
         self.assertEqual(from_name_path.root(), 'pcieRootComplex')
         self.assertEqual(from_name_path.upstream(), 'upstreamBDF')

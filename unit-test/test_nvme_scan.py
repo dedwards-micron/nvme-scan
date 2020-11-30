@@ -1,5 +1,6 @@
 import unittest
-from nvme_scan import get_args
+import json
+from nvme_scan import get_args, NvmeDeviceCollector
 
 
 class NvmeScanTestCase(unittest.TestCase):
@@ -117,6 +118,10 @@ class NvmeScanTestCase(unittest.TestCase):
         self.assertTrue(args.diff_scan)
         self.assertEqual(args.data_file, test_args[3])
 
+    def test_10_linux_collect_full_scan(self):
+        nvme_hlpr = NvmeDeviceCollector()
+        dev_data  = nvme_hlpr.new_scan()
+        print("Device Collector Data:\n{}".format(json.dumps(dev_data)))
 
 if __name__ == '__main__':
     unittest.main()
