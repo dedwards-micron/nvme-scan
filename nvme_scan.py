@@ -98,17 +98,7 @@ class NvmeDeviceCollector(object):
         #   o node_list  tells you which pcie devices have initialized successfully
         #   o block_list tells you which namespaces are attached (not much else)
         node_list  = self.tools_hlpr.find_nvme_dev_nodes()
-        temp_list  = self.tools_hlpr.find_nvme_namespace_dev_nodes()
-        # NOTE: kernel 5.something changed some things about namespaces, there is a
-        #       new set of block devices with 'p#' appended /dev/nvme0n1p1, I don't
-        #       want these because they all map back to the same BDF but do NOT map
-        #       to the drive query for namespaces.
-        block_list = []
-        for temp_block_dev in temp_list:
-            tokens = temp_block_dev.strip().split('p')
-            if len(tokens) == 1:
-                # only keep block nodes without 'p' identifiers
-                block_list.append(temp_block_dev)
+        block_list = self.tools_hlpr.find_nvme_namespace_dev_nodes()
         # TODO: add parsing of udev "driver" path for block devices to associate namespaces to char devices
         # Build SSD namespace list database
         namespace_list  = []

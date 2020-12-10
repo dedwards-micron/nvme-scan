@@ -177,10 +177,24 @@ class LinuxToolsHelper(object):
         # its PCIe relationship.
         return self.find_dev_nodes('nvme*', 'c')
 
-    def find_nvme_namespace_dev_nodes(self):
+    def find_nvme_namespace_dev_nodes(self, no_p_devs=True):
         # look for any nvme "block" driver nodes, these are the logical namespace
         # devices one per attached namespace.
-        return self.find_dev_nodes('nvme*', 'b')
+        all_nodes = self.find_dev_nodes('nvme*', 'b')
+        if no_p_devs:
+            # NOTE: kernel 5.something changed some things about namespaces, there is a
+            #       new set of block devices with 'p#' appended /dev/nvme0n1p1, I don't
+            #       want these because they all map back to the same BDF but do NOT map
+            #       to the drive query for namespaces.
+            block_nodes = []
+            for block_dev in all_nodes:
+                tokens = block_dev.strip().split('p')
+                if len(tokens) == 1:
+                    # only keep block nodes without 'p' identifiers
+                    block_nodes.append(block_dev)
+            return block_nodes
+        return all_nodes
+
 
     # Example:
     #   $ udevadm info -q path -n /dev/nvme0
